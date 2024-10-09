@@ -24,7 +24,7 @@ public class InferenceEngine {
     private List<String> labels;
 
     //preprocessParams输入数据的索引
-    private int index;
+    private Integer index;
 
     // 用于存储图像预处理信息的类变量
     private long[] inputShape = null;
@@ -225,6 +225,8 @@ public class InferenceEngine {
             throw new RuntimeException(e);
         }
     }
-
+    public String getModelPath() {
+        return this.modelPath;
+    }
 
 }

@@ -130,12 +130,18 @@ public class VideoInferenceApp extends JFrame {
             modelManager.loadModel(this);
             DefaultListModel<ModelInfo> modelList = modelManager.getModelList();
             ArrayList<ModelInfo> models = Collections.list(modelList.elements());
+
             for (ModelInfo modelInfo : models) {
                 if (modelInfo != null) {
-                    videoPlayer.addInferenceEngines(new InferenceEngine(modelInfo.getModelFilePath(), modelInfo.getLabels()));
+                    boolean alreadyAdded = videoPlayer.getInferenceEngines().stream()
+                            .anyMatch(engine -> engine.getModelPath().equals(modelInfo.getModelFilePath()));
+                    if (!alreadyAdded) {
+                        videoPlayer.addInferenceEngines(new InferenceEngine(modelInfo.getModelFilePath(), modelInfo.getLabels()));
+                    }
                 }
             }
         });
+
 
         // 播放按钮
         playButton.addActionListener(e -> videoPlayer.playVideo());
@@ -143,14 +149,14 @@ public class VideoInferenceApp extends JFrame {
         // 暂停按钮
         pauseButton.addActionListener(e -> videoPlayer.pauseVideo());
 
-        // 重播按钮
-        replayButton.addActionListener(e -> videoPlayer.replayVideo());
-
-        // 后退5秒
-        rewind5sButton.addActionListener(e -> videoPlayer.rewind(5000));
-
-        // 快进5秒
-        fastForward5sButton.addActionListener(e -> videoPlayer.fastForward(5000));
+//        // 重播按钮
+//        replayButton.addActionListener(e -> videoPlayer.replayVideo());
+//
+//        // 后退5秒
+//        rewind5sButton.addActionListener(e -> videoPlayer.rewind(5000));
+//
+//        // 快进5秒
+//        fastForward5sButton.addActionListener(e -> videoPlayer.fastForward(5000));
 
         // 开始播放按钮的行为
         startPlayButton.addActionListener(e -> {
