@@ -3,13 +3,18 @@ package com.ly;
 import com.formdev.flatlaf.FlatLightLaf;
 import com.ly.layout.VideoPanel;
 import com.ly.model_load.ModelManager;
-import com.ly.play.VideoPlayer;
+import com.ly.onnx.engine.InferenceEngine;
+import com.ly.onnx.model.ModelInfo;
+import com.ly.play.opencv.VideoPlayer;
+
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.filechooser.FileSystemView;
 import java.awt.*;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
 
 public class VideoInferenceApp extends JFrame {
 
@@ -43,12 +48,12 @@ public class VideoInferenceApp extends JFrame {
         videoPanel = new VideoPanel();
         videoPanel.setBackground(Color.BLACK);
 
-        // 初始化 VideoPlayer
-        videoPlayer = new VideoPlayer(videoPanel);
-
         // 模型列表区域
         modelManager = new ModelManager();
         modelManager.setPreferredSize(new Dimension(250, 0)); // 设置模型列表区域的宽度
+
+        // 初始化 VideoPlayer
+        videoPlayer = new VideoPlayer(videoPanel, modelManager);
 
         // 使用 JSplitPane 分割视频区域和模型列表区域
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, videoPanel, modelManager);
@@ -120,8 +125,16 @@ public class VideoInferenceApp extends JFrame {
         // 添加视频加载按钮的行为
         loadVideoButton.addActionListener(e -> selectVideoFile());
 
-        // 添加模型加载按钮的行为
-        loadModelButton.addActionListener(e -> modelManager.loadModel(this));
+        loadModelButton.addActionListener(e -> {
+            modelManager.loadModel(this);
+            DefaultListModel<ModelInfo> modelList = modelManager.getModelList();
+            ArrayList<ModelInfo> models = Collections.list(modelList.elements());
+            for (ModelInfo modelInfo : models) {
+                if (modelInfo != null) {
+                    videoPlayer.addInferenceEngines(new InferenceEngine(modelInfo.getModelFilePath(), modelInfo.getLabels()));
+                }
+            }
+        });
 
         // 播放按钮
         playButton.addActionListener(e -> videoPlayer.playVideo());
