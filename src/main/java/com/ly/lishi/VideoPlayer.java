@@ -1,18 +1,24 @@
-package com.ly.play.opencv;
+package com.ly.lishi;
 
 import com.ly.layout.VideoPanel;
 import com.ly.model_load.ModelManager;
 import com.ly.onnx.engine.InferenceEngine;
 import com.ly.onnx.model.InferenceResult;
 import com.ly.onnx.utils.DrawImagesUtils;
-import org.opencv.core.*;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.core.Rect;
+import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
 import org.opencv.videoio.Videoio;
 
 import javax.swing.*;
 import java.awt.image.BufferedImage;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +44,7 @@ public class VideoPlayer {
 
     private long videoDuration = 0; // 毫秒
     private long currentTimestamp = 0; // 毫秒
+
 
 
     private ModelManager modelManager;
@@ -118,6 +125,7 @@ public class VideoPlayer {
                     fps = 25; // 默认帧率
                 }
                 long frameDelay = (long) (1000 / fps);
+
                 while (isPlaying) {
                     if (Thread.currentThread().isInterrupted()) {
                         break;
@@ -126,19 +134,27 @@ public class VideoPlayer {
                         Thread.sleep(10);
                         continue;
                     }
+
                     Mat frame = new Mat();
                     if (!videoCapture.read(frame) || frame.empty()) {
                         isPlaying = false;
                         break;
                     }
+
                     long startTime = System.currentTimeMillis();
                     BufferedImage bufferedImage = matToBufferedImage(frame);
-                    Map<Integer, Object> stringObjectMap = preprocessImage(frame);
-                    // 创建 FrameData 对象并放入队列
-                    FrameData frameData = new FrameData(bufferedImage, stringObjectMap);
-                    frameDataQueue.put(frameData); // 阻塞，如果队列已满
+
+                    if (bufferedImage != null) {
+//                        float[] floats = preprocessAndConvertBufferedImage(bufferedImage);
+                        Map<String, Object> stringObjectMap = preprocessImage(frame);
+                        // 创建 FrameData 对象并放入队列
+                        FrameData frameData = new FrameData(bufferedImage, null,stringObjectMap);
+                        frameDataQueue.put(frameData); // 阻塞，如果队列已满
+                    }
+
                     // 控制帧率
                     currentTimestamp = (long) videoCapture.get(Videoio.CAP_PROP_POS_MSEC);
+
                     // 控制播放速度
                     long processingTime = System.currentTimeMillis() - startTime;
                     long sleepTime = frameDelay - processingTime;
@@ -171,16 +187,17 @@ public class VideoPlayer {
                     }
 
                     BufferedImage bufferedImage = frameData.image;
-                    Map<Integer, Object> floatObjectMap = frameData.floatObjectMap;
+                    Map<String, Object> floatObjectMap = frameData.floatObjectMap;
 
                     // 执行推理
                     List<InferenceResult> inferenceResults = new ArrayList<>();
                     for (InferenceEngine inferenceEngine : inferenceEngines) {
                         // 假设 InferenceEngine 有 infer 方法接受 float 数组
-                        inferenceResults.add(inferenceEngine.infer(floatObjectMap));
+//                        inferenceResults.add(inferenceEngine.infer( 640, 640,floatObjectMap));
                     }
                     // 绘制推理结果
                     DrawImagesUtils.drawInferenceResult(bufferedImage, inferenceResults);
+
                     // 更新绘制后图像
                     videoPanel.updateImage(bufferedImage);
                 }
@@ -188,6 +205,7 @@ public class VideoPlayer {
                 ex.printStackTrace();
             }
         });
+
         frameReadingThread.start();
         inferenceThread.start();
     }
@@ -198,6 +216,29 @@ public class VideoPlayer {
             return;
         }
         isPaused = true;
+    }
+
+    // 重播视频
+    public void replayVideo() {
+        try {
+            stopVideo(); // 停止当前播放
+            if (videoCapture != null) {
+                videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, 0);
+                currentTimestamp = 0;
+
+                // 显示第一帧
+                Mat frame = new Mat();
+                if (videoCapture.read(frame)) {
+                    BufferedImage bufferedImage = matToBufferedImage(frame);
+                    videoPanel.updateImage(bufferedImage);
+                }
+
+                playVideo(); // 开始播放
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(null, "重播失败: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     // 停止视频
@@ -221,6 +262,41 @@ public class VideoPlayer {
         frameDataQueue.clear();
     }
 
+    // 快进或后退
+    public void seekTo(long seekTime) {
+        if (videoCapture == null) return;
+        try {
+            isPaused = false; // 取消暂停
+            stopVideo(); // 停止当前播放
+            videoCapture.set(Videoio.CAP_PROP_POS_MSEC, seekTime);
+            currentTimestamp = seekTime;
+
+            Mat frame = new Mat();
+            if (videoCapture.read(frame)) {
+                BufferedImage bufferedImage = matToBufferedImage(frame);
+                videoPanel.updateImage(bufferedImage);
+            }
+
+            // 重新开始播放
+            playVideo();
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    // 快进
+    public void fastForward(long milliseconds) {
+        long newTime = Math.min(currentTimestamp + milliseconds, videoDuration);
+        seekTo(newTime);
+    }
+
+    // 后退
+    public void rewind(long milliseconds) {
+        long newTime = Math.max(currentTimestamp - milliseconds, 0);
+        seekTo(newTime);
+    }
+
     public void addInferenceEngines(InferenceEngine inferenceEngine) {
         this.inferenceEngines.add(inferenceEngine);
     }
@@ -228,111 +304,75 @@ public class VideoPlayer {
     // 定义一个内部类来存储帧数据
     private static class FrameData {
         public BufferedImage image;
-        public Map<Integer, Object> floatObjectMap;
-        public FrameData(BufferedImage image, Map<Integer, Object> floatObjectMap) {
+        public float[] floatArray;
+        public Map<String, Object> floatObjectMap;
+
+        public FrameData(BufferedImage image, float[] floatArray, Map<String, Object> floatObjectMap) {
             this.image = image;
+            this.floatArray = floatArray;
             this.floatObjectMap = floatObjectMap;
         }
     }
 
 
     // 可选的预处理方法
-    public Map<Integer, Object> preprocessImage(Mat image) {
+    public Map<String, Object> preprocessImage(Mat image) {
+        int targetWidth = 640;
+        int targetHeight = 640;
+
         int origWidth = image.width();
         int origHeight = image.height();
-        Map<Integer, Object> dynamicInput = new HashMap<>();
-        //定义索引
-        int index = 0;
-        for (InferenceEngine inferenceEngine : this.inferenceEngines) {
-            inferenceEngine.setIndex(index);
-            long[] inputShape = inferenceEngine.getInputShape();
-            int targetWidth = (int) inputShape[2];
-            int targetHeight = (int) inputShape[3];
-            // 计算缩放因子
-            float scalingFactor = Math.min((float) targetWidth / origWidth, (float) targetHeight / origHeight);
 
-            //检查是否存在输入大小一致的 如果存在则跳过
-            if (!dynamicInput.isEmpty()) {
-                for (Map.Entry<Integer, Object> entry : dynamicInput.entrySet()) {
-                    Map<String, Object> input = (Map<String, Object>) entry.getValue();
-                    if (inputShape[2] == (long) input.get("targetHeight") || inputShape[3] == (long) input.get("targetWidth")) {
-                        break;
-                    }
-                }
+        // 计算缩放因子
+        float scalingFactor = Math.min((float) targetWidth / origWidth, (float) targetHeight / origHeight);
+
+        // 计算新的图像尺寸
+        int newWidth = Math.round(origWidth * scalingFactor);
+        int newHeight = Math.round(origHeight * scalingFactor);
+
+        // 调整图像尺寸
+        Mat resizedImage = new Mat();
+        Imgproc.resize(image, resizedImage, new Size(newWidth, newHeight));
+
+        // 转换为 RGB 并归一化
+        Imgproc.cvtColor(resizedImage, resizedImage, Imgproc.COLOR_BGR2RGB);
+        resizedImage.convertTo(resizedImage, CvType.CV_32FC3, 1.0 / 255.0);
+
+        // 创建填充后的图像
+        Mat paddedImage = Mat.zeros(new Size(targetWidth, targetHeight), CvType.CV_32FC3);
+        int xOffset = (targetWidth - newWidth) / 2;
+        int yOffset = (targetHeight - newHeight) / 2;
+        Rect roi = new Rect(xOffset, yOffset, newWidth, newHeight);
+        resizedImage.copyTo(paddedImage.submat(roi));
+
+        // 将图像数据转换为数组
+        int imageSize = targetWidth * targetHeight;
+        float[] chwData = new float[3 * imageSize];
+        float[] hwcData = new float[3 * imageSize];
+        paddedImage.get(0, 0, hwcData);
+
+        // 转换为 CHW 格式
+        int channelSize = imageSize;
+        for (int c = 0; c < 3; c++) {
+            for (int i = 0; i < imageSize; i++) {
+                chwData[c * channelSize + i] = hwcData[i * 3 + c];
             }
-            // 计算新的图像尺寸
-            int newWidth = Math.round(origWidth * scalingFactor);
-            int newHeight = Math.round(origHeight * scalingFactor);
-
-            // 调整图像尺寸
-            Mat resizedImage = new Mat();
-            Imgproc.resize(image, resizedImage, new Size(newWidth, newHeight), 0, 0, Imgproc.INTER_AREA);
-
-            // 获取图像的尺寸
-            int rows = resizedImage.rows();
-            int cols = resizedImage.cols();
-            // 准备存储浮点型数据的数组
-            float[] floatData = new float[rows * cols * 3];
-
-            // 获取原始字节数据
-            byte[] pixelData = new byte[rows * cols * 3];
-            resizedImage.get(0, 0, pixelData);
-
-            // 手动处理像素数据
-            for (int i = 0; i < rows * cols; i++) {
-                int byteIndex = i * 3;
-                int floatIndex = i * 3;
-                // 读取 BGR 值并转换为 0.0 - 1.0 之间的浮点数
-                float b = (pixelData[byteIndex] & 0xFF) / 255.0f;
-                float g = (pixelData[byteIndex + 1] & 0xFF) / 255.0f;
-                float r = (pixelData[byteIndex + 2] & 0xFF) / 255.0f;
-                // 将 BGR 转换为 RGB，并存储到浮点数组中
-                floatData[floatIndex] = r;
-                floatData[floatIndex + 1] = g;
-                floatData[floatIndex + 2] = b;
-            }
-
-            // 将浮点数组转换回 Mat 对象
-            Mat floatImage = new Mat(rows, cols, CvType.CV_32FC3);
-            floatImage.put(0, 0, floatData);
-
-            resizedImage = floatImage;
-
-            // 创建填充后的图像
-            Mat paddedImage = Mat.zeros(new Size(targetWidth, targetHeight), CvType.CV_32FC3);
-            int xOffset = (targetWidth - newWidth) / 2;
-            int yOffset = (targetHeight - newHeight) / 2;
-            Rect roi = new Rect(xOffset, yOffset, newWidth, newHeight);
-            resizedImage.copyTo(paddedImage.submat(roi));
-
-            // 将图像数据转换为数组
-            int imageSize = targetWidth * targetHeight;
-            float[] chwData = new float[3 * imageSize];
-            float[] hwcData = new float[3 * imageSize];
-            paddedImage.get(0, 0, hwcData);
-
-            // 转换为 CHW 格式
-            int channelSize = imageSize;
-            for (int c = 0; c < 3; c++) {
-                for (int i = 0; i < imageSize; i++) {
-                    chwData[c * channelSize + i] = hwcData[i * 3 + c];
-                }
-            }
-            // 释放图像资源
-            resizedImage.release();
-            paddedImage.release();
-            // 将预处理结果和偏移信息存入 Map
-            Map<String, Object> result = new HashMap<>();
-            result.put("inputData", chwData);
-            result.put("origWidth", origWidth);
-            result.put("origHeight", origHeight);
-            result.put("scalingFactor", scalingFactor);
-            result.put("xOffset", xOffset);
-            result.put("yOffset", yOffset);
-            dynamicInput.put(index, result);
-            index++;
         }
-        return dynamicInput;
+
+        // 释放图像资源
+        resizedImage.release();
+        paddedImage.release();
+
+        // 将预处理结果和偏移信息存入 Map
+        Map<String, Object> result = new HashMap<>();
+        result.put("inputData", chwData);
+        result.put("origWidth", origWidth);
+        result.put("origHeight", origHeight);
+        result.put("scalingFactor", scalingFactor);
+        result.put("xOffset", xOffset);
+        result.put("yOffset", yOffset);
+
+        return result;
     }
 
 }

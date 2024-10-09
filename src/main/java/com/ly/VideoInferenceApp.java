@@ -25,10 +25,11 @@ public class VideoInferenceApp extends JFrame {
     private VideoPlayer videoPlayer;
     private ModelManager modelManager;
 
+
+
     public VideoInferenceApp() {
         // 设置窗口标题
-        super("Video Inference Player");
-
+        super("https://gitee.com/sulv0302/onnx-inference4j-play.git");
         // 初始化UI组件
         initializeUI();
     }

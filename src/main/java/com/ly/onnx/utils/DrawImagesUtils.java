@@ -7,15 +7,44 @@ import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.List;
 
 public class DrawImagesUtils {
 
 
-    public static void drawInferenceResult(BufferedImage bufferedImage, List<InferenceResult> result) {
+    public static void drawInferenceResult(BufferedImage bufferedImage, List<InferenceResult> inferenceResults) {
+        Graphics2D g2d = bufferedImage.createGraphics();
+        g2d.setFont(new Font("Arial", Font.PLAIN, 12));
 
+        for (InferenceResult result : inferenceResults) {
+            for (BoundingBox box : result.getBoundingBoxes()) {
+                // 绘制矩形
+                g2d.setColor(Color.RED);
+                g2d.drawRect(box.getX(), box.getY(), box.getWidth(), box.getHeight());
+
+                // 绘制标签
+                String label = box.getLabel() + " " + String.format("%.2f", box.getConfidence());
+                FontMetrics metrics = g2d.getFontMetrics();
+                int labelWidth = metrics.stringWidth(label);
+                int labelHeight = metrics.getHeight();
+
+                // 确保文字不会超出图像
+                int y = Math.max(box.getY(), labelHeight);
+
+                // 绘制文字背景
+                g2d.setColor(Color.RED);
+                g2d.fillRect(box.getX(), y - labelHeight, labelWidth, labelHeight);
+
+                // 绘制文字
+                g2d.setColor(Color.WHITE);
+                g2d.drawString(label, box.getX(), y);
+            }
+        }
+        g2d.dispose(); // 释放资源
     }
+
 
     // 在 Mat 上绘制推理结果
     public static void drawInferenceResult(Mat image, List<InferenceResult> inferenceResults) {

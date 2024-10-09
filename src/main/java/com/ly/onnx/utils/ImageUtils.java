@@ -77,30 +77,5 @@ public class ImageUtils {
         return image;
     }
 
-    // 将 Mat 转换为 float 数组，适用于推理
-    public static float[] matToFloatArray(Mat mat) {
-        // 假设 InferenceEngine 需要 RGB 格式的图像
-        Mat rgbMat = new Mat();
-        Imgproc.cvtColor(mat, rgbMat, Imgproc.COLOR_BGR2RGB);
-
-        // 假设图像已经被预处理（缩放、归一化等），否则需要在这里添加预处理步骤
-
-        // 将 Mat 数据转换为 float 数组
-        int channels = rgbMat.channels();
-        int rows = rgbMat.rows();
-        int cols = rgbMat.cols();
-        float[] floatData = new float[channels * rows * cols];
-        byte[] byteData = new byte[channels * rows * cols];
-        rgbMat.get(0, 0, byteData);
-        for (int i = 0; i < floatData.length; i++) {
-            // 将 unsigned byte 转换为 float [0,1]
-            floatData[i] = (byteData[i] & 0xFF) / 255.0f;
-        }
-        rgbMat.release();
-        return floatData;
-    }
-
-
-
 
 }

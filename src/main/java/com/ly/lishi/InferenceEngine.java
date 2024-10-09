@@ -1,10 +1,9 @@
-package com.ly.onnx.engine;
+package com.ly.lishi;
 
 import ai.onnxruntime.*;
 import com.alibaba.fastjson.JSON;
 import com.ly.onnx.model.BoundingBox;
 import com.ly.onnx.model.InferenceResult;
-
 import lombok.Data;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
@@ -22,9 +21,6 @@ public class InferenceEngine {
 
     private String modelPath;
     private List<String> labels;
-
-    //preprocessParams输入数据的索引
-    private int index;
 
     // 用于存储图像预处理信息的类变量
     private long[] inputShape = null;
@@ -55,21 +51,22 @@ public class InferenceEngine {
         }
     }
 
-    public InferenceResult infer(Map<Integer, Object> preprocessParams) {
+    public InferenceResult infer(int w, int h, Map<String, Object> preprocessParams) {
         long startTime = System.currentTimeMillis();
-        //获取对模型需要的输入大小
-        Map<String, Object> params = (Map<String, Object>) preprocessParams.get(index);
+
         // 从 Map 中获取偏移相关的变量
-        float[] inputData = (float[]) params.get("inputData");
-        int origWidth = (int) params.get("origWidth");
-        int origHeight = (int) params.get("origHeight");
-        float scalingFactor = (float) params.get("scalingFactor");
-        int xOffset = (int) params.get("xOffset");
-        int yOffset = (int) params.get("yOffset");
+        float[] inputData = (float[]) preprocessParams.get("inputData");
+        int origWidth = (int) preprocessParams.get("origWidth");
+        int origHeight = (int) preprocessParams.get("origHeight");
+        float scalingFactor = (float) preprocessParams.get("scalingFactor");
+        int xOffset = (int) preprocessParams.get("xOffset");
+        int yOffset = (int) preprocessParams.get("yOffset");
 
         try {
             Map<String, NodeInfo> inputInfo = session.getInputInfo();
             String inputName = inputInfo.keySet().iterator().next(); // 假设只有一个输入
+
+            long[] inputShape = {1, 3, h, w}; // 根据模型需求调整形状
 
             // 创建输入张量时，使用 CHW 格式的数据
             OnnxTensor inputTensor = OnnxTensor.createTensor(environment, FloatBuffer.wrap(inputData), inputShape);
@@ -226,5 +223,188 @@ public class InferenceEngine {
         }
     }
 
+    public static void main(String[] args) {
+        // 加载 OpenCV 库
+
+        // 初始化标签列表（只有一个标签）
+        List<String> labels = Arrays.asList("person");
+
+        // 创建 InferenceEngine 实例
+        InferenceEngine inferenceEngine = new InferenceEngine("C:\\Users\\ly\\Desktop\\person.onnx", labels);
+
+        for (int j = 0; j < 10; j++) {
+            try {
+                // 加载图片
+                Mat inputImage = Imgcodecs.imread("C:\\Users\\ly\\Desktop\\10230731212230.png");
+
+                // 预处理图像
+                long l1 = System.currentTimeMillis();
+                Map<String, Object> preprocessResult = inferenceEngine.preprocessImage(inputImage);
+                float[] inputData = (float[]) preprocessResult.get("inputData");
+
+                InferenceResult result = null;
+                for (int i = 0; i < 10; i++) {
+                    long l = System.currentTimeMillis();
+                    result = inferenceEngine.infer( 640, 640, preprocessResult);
+                    System.out.println("第 " + (i + 1) + " 次推理耗时：" + (System.currentTimeMillis() - l) + " ms");
+                }
+
+
+                // 处理并显示结果
+                System.out.println("推理结果:");
+                for (BoundingBox box : result.getBoundingBoxes()) {
+                    System.out.println(box);
+                }
+
+                // 可视化并保存带有边界框的图像
+                Mat outputImage = inferenceEngine.drawBoundingBoxes(inputImage, result.getBoundingBoxes());
+
+                // 保存图片到本地文件
+                String outputFilePath = "output_image_with_boxes.jpg";
+                Imgcodecs.imwrite(outputFilePath, outputImage);
+
+                System.out.println("已保存结果图片: " + outputFilePath);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    // 在图像上绘制边界框和标签
+    private Mat drawBoundingBoxes(Mat image, List<BoundingBox> boxes) {
+        for (BoundingBox box : boxes) {
+            // 绘制矩形边界框
+            Imgproc.rectangle(image, new Point(box.getX(), box.getY()),
+                    new Point(box.getX() + box.getWidth(), box.getY() + box.getHeight()),
+                    new Scalar(0, 0, 255), 2); // 红色边框
+
+            // 绘制标签文字和置信度
+            String label = box.getLabel() + " " + String.format("%.2f", box.getConfidence());
+            int baseLine[] = new int[1];
+            Size labelSize = Imgproc.getTextSize(label, Imgproc.FONT_HERSHEY_SIMPLEX, 0.5, 1, baseLine);
+            int top = Math.max(box.getY(), (int) labelSize.height);
+            Imgproc.putText(image, label, new Point(box.getX(), top),
+                    Imgproc.FONT_HERSHEY_SIMPLEX, 0.5, new Scalar(255, 255, 255), 1);
+        }
+
+        return image;
+    }
+
+
+    public Map<String, Object> preprocessImage(Mat image) {
+        int targetWidth = 640;
+        int targetHeight = 640;
+
+        int origWidth = image.width();
+        int origHeight = image.height();
+
+        // 计算缩放因子
+        float scalingFactor = Math.min((float) targetWidth / origWidth, (float) targetHeight / origHeight);
+
+        // 计算新的图像尺寸
+        int newWidth = Math.round(origWidth * scalingFactor);
+        int newHeight = Math.round(origHeight * scalingFactor);
+
+        // 计算偏移量以居中图像
+        int xOffset = (targetWidth - newWidth) / 2;
+        int yOffset = (targetHeight - newHeight) / 2;
+
+        // 调整图像尺寸
+        Mat resizedImage = new Mat();
+        Imgproc.resize(image, resizedImage, new Size(newWidth, newHeight), 0, 0, Imgproc.INTER_LINEAR);
+
+        // 转换为 RGB 并归一化
+        Imgproc.cvtColor(resizedImage, resizedImage, Imgproc.COLOR_BGR2RGB);
+        resizedImage.convertTo(resizedImage, CvType.CV_32FC3, 1.0 / 255.0);
+
+        // 创建填充后的图像
+        Mat paddedImage = Mat.zeros(new Size(targetWidth, targetHeight), CvType.CV_32FC3);
+        Rect roi = new Rect(xOffset, yOffset, newWidth, newHeight);
+        resizedImage.copyTo(paddedImage.submat(roi));
+
+        // 将图像数据转换为数组
+        int imageSize = targetWidth * targetHeight;
+        float[] chwData = new float[3 * imageSize];
+        float[] hwcData = new float[3 * imageSize];
+        paddedImage.get(0, 0, hwcData);
+
+        // 转换为 CHW 格式
+        int channelSize = imageSize;
+        for (int c = 0; c < 3; c++) {
+            for (int i = 0; i < imageSize; i++) {
+                chwData[c * channelSize + i] = hwcData[i * 3 + c];
+            }
+        }
+
+        // 释放图像资源
+        resizedImage.release();
+        paddedImage.release();
+
+        // 将预处理结果和偏移信息存入 Map
+        Map<String, Object> result = new HashMap<>();
+        result.put("inputData", chwData);
+        result.put("origWidth", origWidth);
+        result.put("origHeight", origHeight);
+        result.put("scalingFactor", scalingFactor);
+        result.put("xOffset", xOffset);
+        result.put("yOffset", yOffset);
+
+        return result;
+    }
+
+
+    // 图像预处理
+//    public float[] preprocessImage(Mat image) {
+//        int targetWidth = 640;
+//        int targetHeight = 640;
+//
+//        origWidth = image.width();
+//        origHeight = image.height();
+//
+//        // 计算缩放因子
+//        scalingFactor = Math.min((float) targetWidth / origWidth, (float) targetHeight / origHeight);
+//
+//        // 计算新的图像尺寸
+//        newWidth = Math.round(origWidth * scalingFactor);
+//        newHeight = Math.round(origHeight * scalingFactor);
+//
+//        // 计算偏移量以居中图像
+//        xOffset = (targetWidth - newWidth) / 2;
+//        yOffset = (targetHeight - newHeight) / 2;
+//
+//        // 调整图像尺寸
+//        Mat resizedImage = new Mat();
+//        Imgproc.resize(image, resizedImage, new Size(newWidth, newHeight), 0, 0, Imgproc.INTER_LINEAR);
+//
+//        // 转换为 RGB 并归一化
+//        Imgproc.cvtColor(resizedImage, resizedImage, Imgproc.COLOR_BGR2RGB);
+//        resizedImage.convertTo(resizedImage, CvType.CV_32FC3, 1.0 / 255.0);
+//
+//        // 创建填充后的图像
+//        Mat paddedImage = Mat.zeros(new Size(targetWidth, targetHeight), CvType.CV_32FC3);
+//        Rect roi = new Rect(xOffset, yOffset, newWidth, newHeight);
+//        resizedImage.copyTo(paddedImage.submat(roi));
+//
+//        // 将图像数据转换为数组
+//        int imageSize = targetWidth * targetHeight;
+//        float[] chwData = new float[3 * imageSize];
+//        float[] hwcData = new float[3 * imageSize];
+//        paddedImage.get(0, 0, hwcData);
+//
+//        // 转换为 CHW 格式
+//        int channelSize = imageSize;
+//        for (int c = 0; c < 3; c++) {
+//            for (int i = 0; i < imageSize; i++) {
+//                chwData[c * channelSize + i] = hwcData[i * 3 + c];
+//            }
+//        }
+//
+//        // 释放图像资源
+//        resizedImage.release();
+//        paddedImage.release();
+//
+//        return chwData;
+//    }
 
 }
