@@ -3,9 +3,12 @@ package com.ly.play.opencv;
 import com.ly.layout.VideoPanel;
 import com.ly.model_load.ModelManager;
 import com.ly.onnx.engine.InferenceEngine;
+import com.ly.onnx.model.BoundingBox;
 import com.ly.onnx.model.InferenceResult;
 import com.ly.onnx.utils.DrawImagesUtils;
+import com.ly.track.SimpleTracker;
 import org.opencv.core.*;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
 import org.opencv.videoio.Videoio;
@@ -37,9 +40,13 @@ public class VideoPlayer {
     private Thread inferenceThread;
     private VideoPanel videoPanel;
 
+    // 创建简单的跟踪器
+    SimpleTracker tracker = new SimpleTracker();
+
     private long videoDuration = 0; // 毫秒
     private long currentTimestamp = 0; // 毫秒
 
+    private boolean isTrackingEnabled;
 
     private ModelManager modelManager;
     private List<InferenceEngine> inferenceEngines = new ArrayList<>();
@@ -178,8 +185,20 @@ public class VideoPlayer {
                     List<InferenceResult> inferenceResults = new ArrayList<>();
                     for (InferenceEngine inferenceEngine : inferenceEngines) {
                         // 假设 InferenceEngine 有 infer 方法接受 float 数组
-                        inferenceResults.add(inferenceEngine.infer(floatObjectMap));
+                        InferenceResult infer = inferenceEngine.infer(floatObjectMap);
+                        inferenceResults.add(infer);
                     }
+
+                    // 合并所有模型的推理结果
+                    List<BoundingBox> allBoundingBoxes = new ArrayList<>();
+                    for (InferenceResult result : inferenceResults) {
+                        allBoundingBoxes.addAll(result.getBoundingBoxes());
+                    }
+                    // 如果启用了目标跟踪，则更新边界框并分配 trackId
+                    if (isTrackingEnabled) {
+                        tracker.update(allBoundingBoxes);
+                    }
+
                     // 绘制推理结果
                     DrawImagesUtils.drawInferenceResult(bufferedImage, inferenceResults);
                     // 更新绘制后图像
@@ -201,19 +220,21 @@ public class VideoPlayer {
         isPaused = true;
     }
 
-
-
+    // 设置是否启用目标跟踪
+    public void setTrackingEnabled(boolean enabled) {
+        this.isTrackingEnabled = enabled;
+    }
 
     // 定义一个内部类来存储帧数据
     private static class FrameData {
         public BufferedImage image;
         public Map<Integer, Object> floatObjectMap;
+
         public FrameData(BufferedImage image, Map<Integer, Object> floatObjectMap) {
             this.image = image;
             this.floatObjectMap = floatObjectMap;
         }
     }
-
 
     // 可选的预处理方法
     public Map<Integer, Object> preprocessImage(Mat image) {
@@ -246,9 +267,8 @@ public class VideoPlayer {
                         inferenceEngine.setIndex(index.get());
                     }
                     continue;
-                }else {
+                } else {
                     index.getAndIncrement();
-
                 }
             }
 
@@ -330,6 +350,7 @@ public class VideoPlayer {
 
         return dynamicInput;
     }
+
     public List<InferenceEngine> getInferenceEngines() {
         return this.inferenceEngines;
     }
@@ -359,4 +380,45 @@ public class VideoPlayer {
         this.inferenceEngines.add(inferenceEngine);
     }
 
+    // 加载并处理图片
+    public void loadImage(String imagePath) throws Exception {
+        // 停止任何正在播放的视频
+        stopVideo();
+
+        // 读取图片
+        Mat image = Imgcodecs.imread(imagePath);
+        if (image.empty()) {
+            throw new Exception("无法读取图片文件：" + imagePath);
+        }
+
+        // 转换为 BufferedImage
+        BufferedImage bufferedImage = matToBufferedImage(image);
+
+        // 预处理图片
+        Map<Integer, Object> preprocessedData = preprocessImage(image);
+
+        // 执行推理
+        List<InferenceResult> inferenceResults = new ArrayList<>();
+        for (InferenceEngine inferenceEngine : inferenceEngines) {
+            InferenceResult infer = inferenceEngine.infer(preprocessedData);
+            inferenceResults.add(infer);
+        }
+
+        // 合并所有模型的推理结果
+        List<BoundingBox> allBoundingBoxes = new ArrayList<>();
+        for (InferenceResult result : inferenceResults) {
+            allBoundingBoxes.addAll(result.getBoundingBoxes());
+        }
+
+        // 如果启用了目标跟踪，则更新边界框并分配 trackId
+        if (isTrackingEnabled) {
+            tracker.update(allBoundingBoxes);
+        }
+
+        // 绘制推理结果
+        DrawImagesUtils.drawInferenceResult(bufferedImage, inferenceResults);
+
+        // 在 VideoPanel 上显示图片
+        videoPanel.updateImage(bufferedImage);
+    }
 }

@@ -7,14 +7,15 @@ import com.ly.onnx.engine.InferenceEngine;
 import com.ly.onnx.model.ModelInfo;
 import com.ly.play.opencv.VideoPlayer;
 
-
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.filechooser.FileSystemView;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 public class VideoInferenceApp extends JFrame {
 
@@ -26,10 +27,9 @@ public class VideoInferenceApp extends JFrame {
     private ModelManager modelManager;
 
 
-
     public VideoInferenceApp() {
         // 设置窗口标题
-        super("https://gitee.com/sulv0302/onnx-inference4j-play.git");
+        super("ONNX Inference Application");
         // 初始化UI组件
         initializeUI();
     }
@@ -49,12 +49,52 @@ public class VideoInferenceApp extends JFrame {
         videoPanel = new VideoPanel();
         videoPanel.setBackground(Color.BLACK);
 
-        // 模型列表区域
+        // 设置拖拽功能
+        videoPanel.setTransferHandler(new TransferHandler() {
+            @Override
+            public boolean canImport(TransferSupport support) {
+                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            }
+
+            @Override
+            public boolean importData(TransferSupport support) {
+                if (!canImport(support)) {
+                    return false;
+                }
+                try {
+                    // 获取拖拽的文件列表
+                    List<File> files = (List<File>) support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    for (File file : files) {
+                        String fileName = file.getName().toLowerCase();
+                        if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") ||
+                            fileName.endsWith(".png") || fileName.endsWith(".bmp") ||
+                            fileName.endsWith(".gif")) {
+                            // 加载并处理拖拽的图片文件
+                            videoPlayer.loadImage(file.getAbsolutePath());
+                        } else if (fileName.endsWith(".mp4") || fileName.endsWith(".avi") ||
+                                   fileName.endsWith(".mkv") || fileName.endsWith(".mov") ||
+                                   fileName.endsWith(".flv") || fileName.endsWith(".wmv")) {
+                            // 加载并播放拖拽的视频文件
+                            videoPlayer.loadVideo(file.getAbsolutePath());
+                        }
+                    }
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    return false;
+                }
+                return true;
+            }
+        });
+
+        // 初始化 ModelManager（不传递 videoPlayer）
         modelManager = new ModelManager();
         modelManager.setPreferredSize(new Dimension(250, 0)); // 设置模型列表区域的宽度
 
-        // 初始化 VideoPlayer
+        // 初始化 VideoPlayer 并传递 modelManager
         videoPlayer = new VideoPlayer(videoPanel, modelManager);
+
+        // 将 videoPlayer 设置到 modelManager 中
+        modelManager.setVideoPlayer(videoPlayer);
 
         // 使用 JSplitPane 分割视频区域和模型列表区域
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, videoPanel, modelManager);
@@ -97,6 +137,10 @@ public class VideoInferenceApp extends JFrame {
         JButton loadVideoButton = new JButton("选择视频文件");
         loadVideoButton.setPreferredSize(new Dimension(150, 30));
 
+        // 图片文件选择按钮
+        JButton loadImageButton = new JButton("选择图片文件");
+        loadImageButton.setPreferredSize(new Dimension(150, 30));
+
         // 模型文件选择按钮
         JButton loadModelButton = new JButton("选择模型");
         loadModelButton.setPreferredSize(new Dimension(150, 30));
@@ -108,12 +152,19 @@ public class VideoInferenceApp extends JFrame {
         JButton startPlayButton = new JButton("开始播放");
         startPlayButton.setPreferredSize(new Dimension(100, 30));
 
+        // 添加目标跟踪复选框
+        JCheckBox trackingCheckBox = new JCheckBox("启用目标跟踪");
+        trackingCheckBox.setSelected(false);  // 默认不启用目标跟踪
+
         // 将按钮和输入框添加到顶部面板
         topPanel.add(loadVideoButton);
+        topPanel.add(loadImageButton); // 添加图片按钮
         topPanel.add(loadModelButton);
         topPanel.add(new JLabel("流地址:"));
         topPanel.add(streamUrlField);
         topPanel.add(startPlayButton);
+        // 将复选框添加到顶部面板
+        topPanel.add(trackingCheckBox);
 
         this.add(topPanel, BorderLayout.NORTH);
 
@@ -125,6 +176,9 @@ public class VideoInferenceApp extends JFrame {
 
         // 添加视频加载按钮的行为
         loadVideoButton.addActionListener(e -> selectVideoFile());
+
+        // 添加图片加载按钮的行为
+        loadImageButton.addActionListener(e -> selectImageFile());
 
         loadModelButton.addActionListener(e -> {
             modelManager.loadModel(this);
@@ -141,16 +195,31 @@ public class VideoInferenceApp extends JFrame {
             }
         });
 
+        // 为复选框添加监听器，动态启用或禁用目标跟踪
+        trackingCheckBox.addActionListener(e -> {
+            boolean isSelected = trackingCheckBox.isSelected();  // 获取当前复选框状态
+            videoPlayer.setTrackingEnabled(isSelected);  // 设置是否启用目标跟踪
+        });
 
         // 播放按钮
-        playButton.addActionListener(e -> videoPlayer.playVideo());
+        playButton.addActionListener(e -> {
+            videoPlayer.playVideo();
+        });
 
         // 暂停按钮
         pauseButton.addActionListener(e -> videoPlayer.pauseVideo());
 
-//        // 重播按钮
-//        replayButton.addActionListener(e -> videoPlayer.replayVideo());
-//
+        // 重播按钮
+        replayButton.addActionListener(e -> {
+            try {
+//                videoPlayer.loadVideo(videoPlayer.getCurrentVideoPath());
+                videoPlayer.playVideo();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "重播视频失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
 //        // 后退5秒
 //        rewind5sButton.addActionListener(e -> videoPlayer.rewind(5000));
 //
@@ -191,6 +260,28 @@ public class VideoInferenceApp extends JFrame {
             } catch (Exception ex) {
                 ex.printStackTrace();
                 JOptionPane.showMessageDialog(this, "加载视频失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    // 选择图片文件
+    private void selectImageFile() {
+        File desktopDir = FileSystemView.getFileSystemView().getHomeDirectory();
+        JFileChooser fileChooser = new JFileChooser(desktopDir);
+        fileChooser.setDialogTitle("选择图片文件");
+        // 设置图片文件过滤器，支持常见的图片格式
+        FileNameExtensionFilter imageFilter = new FileNameExtensionFilter(
+                "图片文件 (*.jpg;*.jpeg;*.png;*.bmp;*.gif)", "jpg", "jpeg", "png", "bmp", "gif");
+        fileChooser.setFileFilter(imageFilter);
+
+        int returnValue = fileChooser.showOpenDialog(this);
+        if (returnValue == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+            try {
+                videoPlayer.loadImage(selectedFile.getAbsolutePath());
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "加载图片失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             }
         }
     }

@@ -10,6 +10,7 @@ public class BoundingBox {
     private int height;
     private String label;
     private float confidence;
+    private long trackId;
 
     // 构造函数、getter 和 setter 方法
 
@@ -22,6 +23,5 @@ public class BoundingBox {
         this.confidence = confidence;
     }
 
-    // Getter 和 Setter 方法
-    // ...
+
 }

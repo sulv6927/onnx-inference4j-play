@@ -154,7 +154,6 @@ public class InferenceEngine {
                     if (wBox > 0 && hBox > 0) {
                         // 使用您的单一标签
                         String label = labels.get(0);
-
                         boxes.add(new BoundingBox(x, y, wBox, hBox, label, confidence));
                     }
                 }
