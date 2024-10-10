@@ -1,6 +1,5 @@
 package com.ly.onnx.utils;
 
-import org.bytedeco.javacv.Frame;
 import org.opencv.core.*;
 import org.opencv.imgproc.Imgproc;
 
@@ -32,36 +31,6 @@ public class ImageUtils {
     }
 
 
-
-
-    public static float[] frameToFloatArray(Frame frame) {
-        // 获取 Frame 的宽度和高度
-        int width = frame.imageWidth;
-        int height = frame.imageHeight;
-
-        // 获取 Frame 的像素数据
-        Buffer buffer = frame.image[0]; // 获取图像数据缓冲区
-        ByteBuffer byteBuffer = (ByteBuffer) buffer; // 假设图像数据是以字节缓冲存储
-
-        // 创建 float 数组来存储图像的 RGB 值
-        float[] result = new float[width * height * 3]; // 假设是 RGB 格式图像
-        int idx = 0;
-
-        // 遍历每个像素，提取 R, G, B 值并归一化到 [0, 1]
-        for (int i = 0; i < byteBuffer.capacity(); i += 3) {
-            // 提取 RGB 通道数据
-            int r = byteBuffer.get(i) & 0xFF; // Red
-            int g = byteBuffer.get(i + 1) & 0xFF; // Green
-            int b = byteBuffer.get(i + 2) & 0xFF; // Blue
-
-            // 将 RGB 值归一化为 float 并存入数组
-            result[idx++] = r / 255.0f;
-            result[idx++] = g / 255.0f;
-            result[idx++] = b / 255.0f;
-        }
-
-        return result;
-    }
     // 将 Mat 转换为 BufferedImage
     public static BufferedImage matToBufferedImage(Mat mat) {
         int type = BufferedImage.TYPE_3BYTE_BGR;
