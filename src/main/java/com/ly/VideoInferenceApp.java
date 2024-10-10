@@ -29,7 +29,7 @@ public class VideoInferenceApp extends JFrame {
 
     public VideoInferenceApp() {
         // 设置窗口标题
-        super("ONNX Inference Application");
+        super("V：sulv0302");
         // 初始化UI组件
         initializeUI();
     }
@@ -114,8 +114,8 @@ public class VideoInferenceApp extends JFrame {
         JButton playButton = new JButton("播放");
         JButton pauseButton = new JButton("暂停");
         JButton replayButton = new JButton("重播");
-        JButton fastForward5sButton = new JButton("快进1秒");
-        JButton rewind5sButton = new JButton("后退5秒");
+        JButton fastForward5sButton = new JButton("快进3秒");
+        JButton rewind5sButton = new JButton("后退3秒");
 
         // 设置按钮的统一高度
         Dimension buttonSize = new Dimension(100, 30);
@@ -226,7 +226,7 @@ public class VideoInferenceApp extends JFrame {
         // 后退5秒
         rewind5sButton.addActionListener(e -> {
             try {
-                videoPlayer.rewind(5000); // 后退5000毫秒（5秒）
+                videoPlayer.rewind(3000); // 后退5000毫秒（5秒）
             } catch (Exception ex) {
                 ex.printStackTrace();
                 JOptionPane.showMessageDialog(this, "后退失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
@@ -236,7 +236,7 @@ public class VideoInferenceApp extends JFrame {
         // 快进5秒
         fastForward5sButton.addActionListener(e -> {
             try {
-                videoPlayer.fastForward(1000); // 快进5000毫秒（5秒）
+                videoPlayer.fastForward(3000); // 快进5000毫秒（5秒）
             } catch (Exception ex) {
                 ex.printStackTrace();
                 JOptionPane.showMessageDialog(this, "快进失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);

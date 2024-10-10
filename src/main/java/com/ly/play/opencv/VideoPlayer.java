@@ -20,16 +20,22 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
 import static com.ly.onnx.utils.ImageUtils.matToBufferedImage;
 
 public class VideoPlayer {
+    private static final Logger logger = Logger.getLogger(VideoPlayer.class.getName());
+
     static {
         // 加载 OpenCV 库
         nu.pattern.OpenCV.loadLocally();
         String OS = System.getProperty("os.name").toLowerCase();
         if (OS.contains("win")) {
+            // 使用发布版 FFmpeg DLL
             System.load(ClassLoader.getSystemResource("lib/win/opencv_videoio_ffmpeg470_64.dll").getPath());
+            // 如果需要调试版，取消注释以下行
+            // System.load(ClassLoader.getSystemResource("lib/win/opencv_videoio_ffmpeg470_64d.dll").getPath());
         }
     }
 
@@ -54,76 +60,117 @@ public class VideoPlayer {
     // 定义阻塞队列来缓冲转换后的数据
     private BlockingQueue<FrameData> frameDataQueue = new LinkedBlockingQueue<>(10); // 队列容量可根据需要调整
 
+    // 添加一个锁对象用于同步 VideoCapture 访问
+    private final Object captureLock = new Object();
+
     public VideoPlayer(VideoPanel videoPanel, ModelManager modelManager) {
         this.videoPanel = videoPanel;
         this.modelManager = modelManager;
     }
 
+    // 添加一个方法来停止播放线程而不释放 VideoCapture
+    public void stopPlayback() {
+        synchronized (captureLock) {
+            isPlaying = false;
+            isPaused = false;
 
+            if (frameReadingThread != null && frameReadingThread.isAlive()) {
+                frameReadingThread.interrupt();
+                try {
+                    frameReadingThread.join(); // 等待线程终止
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            if (inferenceThread != null && inferenceThread.isAlive()) {
+                inferenceThread.interrupt();
+                try {
+                    inferenceThread.join(); // 等待线程终止
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            frameDataQueue.clear();
+        }
+    }
 
     // 加载视频或流
     public void loadVideo(String videoFilePathOrStreamUrl) throws Exception {
-        stopVideo();
-        if (videoFilePathOrStreamUrl.equals("0")) {
-            int cameraIndex = Integer.parseInt(videoFilePathOrStreamUrl);
-            videoCapture = new VideoCapture(cameraIndex);
-            if (!videoCapture.isOpened()) {
-                throw new Exception("无法打开摄像头");
-            }
-            videoDuration = 0; // 摄像头没有固定的时长
-            playVideo();
-        } else {
-            // 输入不是数字，尝试打开视频文件
-            videoCapture = new VideoCapture(videoFilePathOrStreamUrl, Videoio.CAP_FFMPEG);
-            if (!videoCapture.isOpened()) {
-                throw new Exception("无法打开视频文件：" + videoFilePathOrStreamUrl);
-            }
-            double frameCount = videoCapture.get(Videoio.CAP_PROP_FRAME_COUNT);
-            double fps = videoCapture.get(Videoio.CAP_PROP_FPS);
-            if (fps <= 0 || Double.isNaN(fps)) {
-                fps = 25; // 默认帧率
-            }
-            videoDuration = (long) (frameCount / fps * 1000); // 转换为毫秒
-        }
+        synchronized (captureLock) {
+            stopVideo(); // 停止任何现有的播放并释放资源
 
-        // 显示第一帧
-        Mat frame = new Mat();
-        if (videoCapture.read(frame)) {
-            BufferedImage bufferedImage = matToBufferedImage(frame);
-            videoPanel.updateImage(bufferedImage);
+            if (videoFilePathOrStreamUrl.equals("0")) {
+                int cameraIndex = Integer.parseInt(videoFilePathOrStreamUrl);
+                videoCapture = new VideoCapture(cameraIndex);
+                if (!videoCapture.isOpened()) {
+                    throw new Exception("无法打开摄像头");
+                }
+                videoDuration = 0; // 摄像头没有固定的时长
+                playVideo();
+            } else {
+                // 输入不是数字，尝试打开视频文件
+                videoCapture = new VideoCapture(videoFilePathOrStreamUrl, Videoio.CAP_FFMPEG);
+                if (!videoCapture.isOpened()) {
+                    throw new Exception("无法打开视频文件：" + videoFilePathOrStreamUrl);
+                }
+                double frameCount = videoCapture.get(Videoio.CAP_PROP_FRAME_COUNT);
+                double fps = videoCapture.get(Videoio.CAP_PROP_FPS);
+                if (fps <= 0 || Double.isNaN(fps)) {
+                    fps = 25; // 默认帧率
+                }
+                videoDuration = (long) (frameCount / fps * 1000); // 转换为毫秒
+            }
+
+            // 显示第一帧
+            Mat frame = new Mat();
+            boolean frameRead = videoCapture.read(frame);
+            if (frameRead && !frame.empty()) {
+                BufferedImage bufferedImage = matToBufferedImage(frame);
+                videoPanel.updateImage(bufferedImage);
+                currentTimestamp = 0;
+            } else {
+                throw new Exception("无法读取第一帧");
+            }
+
+            // 重置到视频开始位置
+            boolean success = videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, 0);
+            if (!success) {
+                throw new Exception("无法重置视频到起始位置。");
+            }
             currentTimestamp = 0;
-        } else {
-            throw new Exception("无法读取第一帧");
         }
-
-        // 重置到视频开始位置
-        videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, 0);
-        currentTimestamp = 0;
     }
 
-    // 播放
+    // 播放视频
     public void playVideo() {
-        if (videoCapture == null || !videoCapture.isOpened()) {
-            JOptionPane.showMessageDialog(null, "请先加载视频文件或流。", "提示", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        if (isPlaying) {
-            if (isPaused) {
-                isPaused = false; // 恢复播放
+        synchronized (captureLock) {
+            if (videoCapture == null || !videoCapture.isOpened()) {
+                JOptionPane.showMessageDialog(null, "请先加载视频文件或流。", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
             }
-            return;
+
+            if (isPlaying) {
+                if (isPaused) {
+                    isPaused = false; // 恢复播放
+                }
+                return;
+            }
+
+            isPlaying = true;
+            isPaused = false;
+
+            frameDataQueue.clear(); // 开始播放前清空队列
         }
-
-        isPlaying = true;
-        isPaused = false;
-
-        frameDataQueue.clear(); // 开始播放前清空队列
 
         // 创建并启动帧读取和转换线程
         frameReadingThread = new Thread(() -> {
             try {
-                double fps = videoCapture.get(Videoio.CAP_PROP_FPS);
+                double fps;
+                synchronized (captureLock) {
+                    fps = videoCapture.get(Videoio.CAP_PROP_FPS);
+                }
                 if (fps <= 0 || Double.isNaN(fps)) {
                     fps = 25; // 默认帧率
                 }
@@ -137,7 +184,11 @@ public class VideoPlayer {
                         continue;
                     }
                     Mat frame = new Mat();
-                    if (!videoCapture.read(frame) || frame.empty()) {
+                    boolean frameRead;
+                    synchronized (captureLock) {
+                        frameRead = videoCapture.read(frame);
+                    }
+                    if (!frameRead || frame.empty()) {
                         isPlaying = false;
                         break;
                     }
@@ -148,7 +199,9 @@ public class VideoPlayer {
                     FrameData frameData = new FrameData(bufferedImage, stringObjectMap);
                     frameDataQueue.put(frameData); // 阻塞，如果队列已满
                     // 控制帧率
-                    currentTimestamp = (long) videoCapture.get(Videoio.CAP_PROP_POS_MSEC);
+                    synchronized (captureLock) {
+                        currentTimestamp = (long) (videoCapture.get(Videoio.CAP_PROP_POS_FRAMES) * 1000 / fps);
+                    }
                     // 控制播放速度
                     long processingTime = System.currentTimeMillis() - startTime;
                     long sleepTime = frameDelay - processingTime;
@@ -214,12 +267,82 @@ public class VideoPlayer {
         inferenceThread.start();
     }
 
+    // 添加重播方法
+    public void replayVideo() throws Exception {
+        synchronized (captureLock) {
+            if (videoCapture != null && videoCapture.isOpened()) {
+                stopPlayback(); // 停止现有的播放线程
+                boolean success = videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, 0); // 重置帧位置到起始
+                if (!success) {
+                    throw new Exception("无法重置视频到起始位置。");
+                }
+                currentTimestamp = 0;
+                logger.info("视频已重播到起始位置。");
+                playVideo(); // 重新开始播放
+            } else {
+                throw new Exception("视频未加载或未打开。");
+            }
+        }
+    }
+
+    // 添加 rewind 和 fastForward 方法，使用帧索引而非毫秒
+    public void rewind(long millis) throws Exception {
+        synchronized (captureLock) {
+            if (videoCapture != null && videoCapture.isOpened()) {
+                double fps = videoCapture.get(Videoio.CAP_PROP_FPS);
+                if (fps <= 0 || Double.isNaN(fps)) {
+                    fps = 25; // 默认帧率
+                }
+                long framesToRewind = (long) (millis * fps / 1000);
+                long currentFrame = (long) videoCapture.get(Videoio.CAP_PROP_POS_FRAMES);
+                long newFrame = currentFrame - framesToRewind;
+                if (newFrame < 0) newFrame = 0;
+                logger.info("Rewinding " + millis + " ms (" + framesToRewind + " frames) from frame " + currentFrame + " to frame " + newFrame);
+                boolean success = videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, newFrame);
+                if (!success) {
+                    throw new Exception("无法后退视频到指定帧。");
+                }
+                currentTimestamp = (long) (newFrame * 1000 / fps);
+            } else {
+                throw new Exception("视频未加载或未打开。");
+            }
+        }
+    }
+
+    public void fastForward(long millis) throws Exception {
+        synchronized (captureLock) {
+            if (videoCapture != null && videoCapture.isOpened()) {
+                double fps = videoCapture.get(Videoio.CAP_PROP_FPS);
+                if (fps <= 0 || Double.isNaN(fps)) {
+                    fps = 25; // 默认帧率
+                }
+                long framesToFastForward = (long) (millis * fps / 1000);
+                long currentFrame = (long) videoCapture.get(Videoio.CAP_PROP_POS_FRAMES);
+                long newFrame = currentFrame + framesToFastForward;
+                double frameCount = videoCapture.get(Videoio.CAP_PROP_FRAME_COUNT);
+                if (frameCount > 0 && newFrame > frameCount) {
+                    newFrame = (long) frameCount;
+                }
+                logger.info("Fast forwarding " + millis + " ms (" + framesToFastForward + " frames) from frame " + currentFrame + " to frame " + newFrame);
+                boolean success = videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, newFrame);
+                if (!success) {
+                    throw new Exception("无法快进视频到指定帧。");
+                }
+                currentTimestamp = (long) (newFrame * 1000 / fps);
+            } else {
+                throw new Exception("视频未加载或未打开。");
+            }
+        }
+    }
+
     // 暂停视频
     public void pauseVideo() {
-        if (!isPlaying) {
-            return;
+        synchronized (captureLock) {
+            if (!isPlaying) {
+                return;
+            }
+            isPaused = true;
         }
-        isPaused = true;
     }
 
     // 设置是否启用目标跟踪
@@ -359,23 +482,35 @@ public class VideoPlayer {
 
     // 停止视频
     public void stopVideo() {
-        isPlaying = false;
-        isPaused = false;
+        synchronized (captureLock) {
+            isPlaying = false;
+            isPaused = false;
 
-        if (frameReadingThread != null && frameReadingThread.isAlive()) {
-            frameReadingThread.interrupt();
+            if (frameReadingThread != null && frameReadingThread.isAlive()) {
+                frameReadingThread.interrupt();
+                try {
+                    frameReadingThread.join(); // 等待线程终止
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            if (inferenceThread != null && inferenceThread.isAlive()) {
+                inferenceThread.interrupt();
+                try {
+                    inferenceThread.join(); // 等待线程终止
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            if (videoCapture != null) {
+                videoCapture.release();
+                videoCapture = null;
+            }
+
+            frameDataQueue.clear();
         }
-
-        if (inferenceThread != null && inferenceThread.isAlive()) {
-            inferenceThread.interrupt();
-        }
-
-        if (videoCapture != null) {
-            videoCapture.release();
-            videoCapture = null;
-        }
-
-        frameDataQueue.clear();
     }
 
     // 删除推理引擎
@@ -385,49 +520,6 @@ public class VideoPlayer {
 
     public void addInferenceEngines(InferenceEngine inferenceEngine) {
         this.inferenceEngines.add(inferenceEngine);
-    }
-
-    // 添加重播方法
-    // 添加重播方法
-    public void replayVideo() throws Exception {
-        if (videoCapture != null && videoCapture.isOpened()) {
-            boolean success = videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, 0);
-            if (!success) {
-                throw new Exception("无法重置视频到起始位置。");
-            }
-            currentTimestamp = 0;
-        } else {
-            throw new Exception("视频未加载或未打开。");
-        }
-    }
-
-    // 添加 rewind 和 fastForward 方法
-    public void rewind(long millis) throws Exception {
-        if (videoCapture == null || !videoCapture.isOpened()) {
-            throw new Exception("视频未加载或未打开");
-        }
-        long newTimestamp = currentTimestamp - millis;
-        if (newTimestamp < 0) newTimestamp = 0;
-        boolean success = videoCapture.set(Videoio.CAP_PROP_POS_MSEC, newTimestamp);
-        if (!success) {
-            throw new Exception("无法后退视频。");
-        }
-        currentTimestamp = newTimestamp;
-    }
-
-    public synchronized void fastForward(long millis) throws Exception {
-        if (videoCapture == null || !videoCapture.isOpened()) {
-            throw new Exception("视频未加载或未打开");
-        }
-        long newTimestamp = currentTimestamp + millis;
-        if (videoDuration > 0 && newTimestamp > videoDuration) {
-            newTimestamp = videoDuration;
-        }
-        boolean success = videoCapture.set(Videoio.CAP_PROP_POS_MSEC, newTimestamp);
-        if (!success) {
-            throw new Exception("无法快进视频。");
-        }
-        currentTimestamp = newTimestamp;
     }
 
     // 加载并处理图片
