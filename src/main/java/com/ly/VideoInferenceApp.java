@@ -130,7 +130,6 @@ public class VideoInferenceApp extends JFrame {
             modelManager.loadModel(this);
             DefaultListModel<ModelInfo> modelList = modelManager.getModelList();
             ArrayList<ModelInfo> models = Collections.list(modelList.elements());
-
             for (ModelInfo modelInfo : models) {
                 if (modelInfo != null) {
                     boolean alreadyAdded = videoPlayer.getInferenceEngines().stream()
