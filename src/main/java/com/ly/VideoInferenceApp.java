@@ -106,11 +106,15 @@ public class VideoInferenceApp extends JFrame {
         controlPanel = new JPanel();
         controlPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 5));
 
+        JButton recognizeButton = new JButton("识别图片");
+        recognizeButton.setPreferredSize(new Dimension(120, 30));
+        controlPanel.add(recognizeButton);
+
         // 创建控制按钮
         JButton playButton = new JButton("播放");
         JButton pauseButton = new JButton("暂停");
         JButton replayButton = new JButton("重播");
-        JButton fastForward5sButton = new JButton("快进5秒");
+        JButton fastForward5sButton = new JButton("快进1秒");
         JButton rewind5sButton = new JButton("后退5秒");
 
         // 设置按钮的统一高度
@@ -212,19 +216,32 @@ public class VideoInferenceApp extends JFrame {
         // 重播按钮
         replayButton.addActionListener(e -> {
             try {
-//                videoPlayer.loadVideo(videoPlayer.getCurrentVideoPath());
-                videoPlayer.playVideo();
+                videoPlayer.replayVideo(); // 调用重播方法
             } catch (Exception ex) {
                 ex.printStackTrace();
                 JOptionPane.showMessageDialog(this, "重播视频失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             }
         });
 
-//        // 后退5秒
-//        rewind5sButton.addActionListener(e -> videoPlayer.rewind(5000));
-//
-//        // 快进5秒
-//        fastForward5sButton.addActionListener(e -> videoPlayer.fastForward(5000));
+        // 后退5秒
+        rewind5sButton.addActionListener(e -> {
+            try {
+                videoPlayer.rewind(5000); // 后退5000毫秒（5秒）
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "后退失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        // 快进5秒
+        fastForward5sButton.addActionListener(e -> {
+            try {
+                videoPlayer.fastForward(1000); // 快进5000毫秒（5秒）
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "快进失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            }
+        });
 
         // 开始播放按钮的行为
         startPlayButton.addActionListener(e -> {
@@ -265,6 +282,7 @@ public class VideoInferenceApp extends JFrame {
     }
 
     // 选择图片文件
+    // 选择图片文件
     private void selectImageFile() {
         File desktopDir = FileSystemView.getFileSystemView().getHomeDirectory();
         JFileChooser fileChooser = new JFileChooser(desktopDir);
@@ -279,6 +297,7 @@ public class VideoInferenceApp extends JFrame {
             File selectedFile = fileChooser.getSelectedFile();
             try {
                 videoPlayer.loadImage(selectedFile.getAbsolutePath());
+                JOptionPane.showMessageDialog(this, "图片加载成功，请点击“识别图片”按钮进行识别。", "提示", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
                 ex.printStackTrace();
                 JOptionPane.showMessageDialog(this, "加载图片失败: " + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);

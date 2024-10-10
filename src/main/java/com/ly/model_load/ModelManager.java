@@ -66,9 +66,15 @@ public class ModelManager extends JPanel {
         deleteMenuItem.addActionListener(e -> {
             int selectedIndex = modelList.getSelectedIndex();
             if (selectedIndex != -1) {
+                ModelInfo modelInfo = modelListModel.getElementAt(selectedIndex); // 获取要删除的模型信息
                 int confirmation = JOptionPane.showConfirmDialog(null, "确定要删除此模型吗？", "确认删除", JOptionPane.YES_NO_OPTION);
                 if (confirmation == JOptionPane.YES_OPTION) {
                     modelListModel.remove(selectedIndex); // 删除选中的模型
+
+                    // 从 VideoPlayer 中移除对应的推理引擎
+                    if (videoPlayer != null) {
+                        videoPlayer.removeInferenceEngine(modelInfo.getModelFilePath());
+                    }
                 }
             }
         });

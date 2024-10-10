@@ -59,6 +59,8 @@ public class VideoPlayer {
         this.modelManager = modelManager;
     }
 
+
+
     // 加载视频或流
     public void loadVideo(String videoFilePathOrStreamUrl) throws Exception {
         stopVideo();
@@ -376,12 +378,61 @@ public class VideoPlayer {
         frameDataQueue.clear();
     }
 
+    // 删除推理引擎
+    public void removeInferenceEngine(String modelPath) {
+        inferenceEngines.removeIf(engine -> engine.getModelPath().equals(modelPath));
+    }
+
     public void addInferenceEngines(InferenceEngine inferenceEngine) {
         this.inferenceEngines.add(inferenceEngine);
     }
 
+    // 添加重播方法
+    // 添加重播方法
+    public void replayVideo() throws Exception {
+        if (videoCapture != null && videoCapture.isOpened()) {
+            boolean success = videoCapture.set(Videoio.CAP_PROP_POS_FRAMES, 0);
+            if (!success) {
+                throw new Exception("无法重置视频到起始位置。");
+            }
+            currentTimestamp = 0;
+        } else {
+            throw new Exception("视频未加载或未打开。");
+        }
+    }
+
+    // 添加 rewind 和 fastForward 方法
+    public void rewind(long millis) throws Exception {
+        if (videoCapture == null || !videoCapture.isOpened()) {
+            throw new Exception("视频未加载或未打开");
+        }
+        long newTimestamp = currentTimestamp - millis;
+        if (newTimestamp < 0) newTimestamp = 0;
+        boolean success = videoCapture.set(Videoio.CAP_PROP_POS_MSEC, newTimestamp);
+        if (!success) {
+            throw new Exception("无法后退视频。");
+        }
+        currentTimestamp = newTimestamp;
+    }
+
+    public synchronized void fastForward(long millis) throws Exception {
+        if (videoCapture == null || !videoCapture.isOpened()) {
+            throw new Exception("视频未加载或未打开");
+        }
+        long newTimestamp = currentTimestamp + millis;
+        if (videoDuration > 0 && newTimestamp > videoDuration) {
+            newTimestamp = videoDuration;
+        }
+        boolean success = videoCapture.set(Videoio.CAP_PROP_POS_MSEC, newTimestamp);
+        if (!success) {
+            throw new Exception("无法快进视频。");
+        }
+        currentTimestamp = newTimestamp;
+    }
+
     // 加载并处理图片
     public void loadImage(String imagePath) throws Exception {
+
         // 停止任何正在播放的视频
         stopVideo();
 
