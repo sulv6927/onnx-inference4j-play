@@ -24,21 +24,11 @@
             <artifactId>onnxruntime_gpu</artifactId>
             <version>1.16.0</version>
         </dependency>
-        <dependency>
-            <groupId>org.bytedeco</groupId>
-            <artifactId>javacv-platform</artifactId>
-            <version>1.5.7</version>
-        </dependency>
         <!-- FlatLaf for modern Swing look and feel -->
         <dependency>
             <groupId>com.formdev</groupId>
             <artifactId>flatlaf</artifactId>
             <version>2.3</version>
-        </dependency>
-        <dependency>
-            <groupId>org.bytedeco</groupId>
-            <artifactId>ffmpeg-platform</artifactId>
-            <version>5.0-1.5.7</version>
         </dependency>
         <dependency>
             <groupId>org.openpnp</groupId>
