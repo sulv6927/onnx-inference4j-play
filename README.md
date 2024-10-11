@@ -38,6 +38,7 @@
    bash复制代码git clone https://gitee.com/sulv0302/onnx-inference4j-play.git
    cd onnx-inference4j-play
    mvn clean install
+   复制项目中的lib目录到打包后的jar包同层级
    ```
 
 ### 📝 使用说明
