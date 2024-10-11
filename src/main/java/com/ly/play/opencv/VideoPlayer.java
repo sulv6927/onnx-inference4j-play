@@ -15,6 +15,9 @@ import org.opencv.videoio.Videoio;
 
 import javax.swing.*;
 import java.awt.image.BufferedImage;
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -33,11 +36,13 @@ public class VideoPlayer {
         String OS = System.getProperty("os.name").toLowerCase();
         if (OS.contains("win")) {
             // 使用发布版 FFmpeg DLL
-            System.load(ClassLoader.getSystemResource("lib/win/opencv_videoio_ffmpeg470_64.dll").getPath());
-            // 如果需要调试版，取消注释以下行
-            // System.load(ClassLoader.getSystemResource("lib/win/opencv_videoio_ffmpeg470_64d.dll").getPath());
+            System.load(System.getProperty("user.dir") + "\\lib\\win\\opencv_videoio_ffmpeg470_64.dll");
         }
     }
+
+
+
+
 
     private VideoCapture videoCapture;
     private volatile boolean isPlaying = false;
