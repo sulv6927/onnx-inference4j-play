@@ -35,8 +35,9 @@ public class VideoPlayer {
         nu.pattern.OpenCV.loadLocally();
         String OS = System.getProperty("os.name").toLowerCase();
         if (OS.contains("win")) {
-            // 使用发布版 FFmpeg DLL
             System.load(System.getProperty("user.dir") + "\\lib\\win\\opencv_videoio_ffmpeg470_64.dll");
+        }else if (OS.contains("linux")) {
+
         }
     }
 
